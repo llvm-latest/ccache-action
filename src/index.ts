@@ -8,8 +8,6 @@ import * as tc from '@actions/tool-cache'
 import * as semver from 'semver'
 
 import {
-  restoreBinaryCache,
-  saveBinaryCache,
   restoreCache,
   saveCache,
   deleteCache
@@ -28,7 +26,6 @@ import { findVersion, type CCacheVersion } from './utils'
 interface GHAStates {
   ccacheKeyPrefix: string
   ccacheDir: string
-  saveCacheOncePerKey: boolean
   restoreKey: string
   ghToken: string
 }
@@ -38,7 +35,6 @@ async function run(): Promise<void> {
     await postAction({
       ccacheKeyPrefix: core.getState('ccacheKeyPrefix'),
       ccacheDir: core.getState('ccacheDir'),
-      saveCacheOncePerKey: core.getState('saveCacheOncePerKey') === 'true',
       restoreKey: core.getState('restoreKey'),
       ghToken: core.getState('ghToken')
     })
@@ -69,7 +65,6 @@ async function run(): Promise<void> {
   core.saveState('isPost', 'true')
   core.saveState('ccacheKeyPrefix', input.ccacheKeyPrefix)
   core.saveState('ccacheDir', input.ccacheDir)
-  core.saveState('saveCacheOncePerKey', input.saveCacheOncePerKey)
   core.saveState('restoreKey', restoreKey ?? '')
   core.saveState('ghToken', input.ghToken)
 }
@@ -90,26 +85,6 @@ async function preInstall(input: GHAInputs) {
 
   const installPath = path.join(input.path, 'install', 'bin')
 
-  const cacheHit = await core.group('Restore Binary Cache', async () => {
-    const restoreKey = await restoreBinaryCache(
-      installPath,
-      input.ccacheBinaryKeyPrefix,
-      ccacheVersion.version.version
-    )
-
-    if (restoreKey !== undefined) {
-      core.info(`Restored binary cache with key: ${restoreKey}`)
-    } else {
-      core.info('Binary cache not found.')
-    }
-
-    return restoreKey
-  })
-
-  if (cacheHit) {
-    if (await postInstall(input, ccacheVersion, installPath)) return
-  }
-
   await install(input, ccacheVersion, installPath)
 }
 
@@ -118,36 +93,34 @@ async function install(
   ccacheVersion: CCacheVersion,
   installPath: string
 ) {
-  if (input.installType === 'binary') {
-    const downloadHit = await core.group('Download Binary', async () => {
-      const matrix = CCACHE_BINARY_SUPPORTED_URL[os.platform()]
+  const downloadHit = await core.group('Download Binary', async () => {
+    const matrix = CCACHE_BINARY_SUPPORTED_URL[os.platform()]
 
-      if (matrix) {
-        let targetBinary: CCacheBinaryMetadata | undefined
+    if (matrix) {
+      let targetBinary: CCacheBinaryMetadata | undefined
 
-        for (const v of Object.entries(matrix)) {
-          if (semver.satisfies(ccacheVersion.version, v[0])) {
-            targetBinary = v[1]
-            break
-          }
-        }
-
-        if (targetBinary) {
-          return await downloadTool(
-            targetBinary,
-            ccacheVersion.version.version,
-            input.path,
-            installPath
-          )
+      for (const v of Object.entries(matrix)) {
+        if (semver.satisfies(ccacheVersion.version, v[0])) {
+          targetBinary = v[1]
+          break
         }
       }
 
-      return false
-    })
-
-    if (downloadHit) {
-      if (await postInstall(input, ccacheVersion, installPath, true)) return
+      if (targetBinary) {
+        return await downloadTool(
+          targetBinary,
+          ccacheVersion.version.version,
+          input.path,
+          installPath
+        )
+      }
     }
+
+    return false
+  })
+
+  if (downloadHit) {
+    if (await postInstall(input, ccacheVersion, installPath)) return
   }
 
   // Fail to restore or download, fall back to compile from source.
@@ -166,7 +139,7 @@ async function install(
     await cmakeHelper.install(path.join(input.path, 'install'))
   })
 
-  if (!(await postInstall(input, ccacheVersion, installPath, true))) {
+  if (!(await postInstall(input, ccacheVersion, installPath))) {
     throw new Error(
       'ccache is not working after compilation. Try downgrading if problem persist.'
     )
@@ -177,7 +150,6 @@ async function postInstall(
   input: GHAInputs,
   ccacheVersion: CCacheVersion,
   installPath: string,
-  saveCache?: boolean
 ): Promise<boolean> {
   const working = await core.group('Test Ccache', () =>
     showVersion(installPath)
@@ -190,16 +162,6 @@ async function postInstall(
       core.setOutput('ccache-binary-path', path.join(installPath, 'ccache.exe'))
     } else {
       core.setOutput('ccache-binary-path', path.join(installPath, 'ccache'))
-    }
-
-    if (saveCache) {
-      await core.group('Save Binary Cache', () =>
-        saveBinaryCache(
-          installPath,
-          input.ccacheBinaryKeyPrefix,
-          ccacheVersion.version.version
-        )
-      )
     }
 
     return true
@@ -247,29 +209,25 @@ async function postAction(state: GHAStates) {
   const restoreKey = `${state.ccacheKeyPrefix}_${outputHash}`
   const isPullRequest = github.context.ref.startsWith('refs/pull/')
 
-  if (restoreKey !== state.restoreKey) {
-    if (state.saveCacheOncePerKey && state.restoreKey !== '') {
-      core.info(`Stored cache already exist. Skip saving cache.`)
-      return
-    }
-
-    if (state.ghToken !== '' && state.restoreKey !== '' && !isPullRequest) {
-      try {
-        await core.group('Delete old cache', async () => {
-          await deleteCache(state.ghToken, state.restoreKey)
-          core.info(`Deleted cache with key: ${state.restoreKey}`)
-        })
-      } catch (error) {
-        core.warning((error as Error)?.message ?? error)
-      }
-    }
-
-    await core.group('Saving cache', () =>
-      saveCache(state.ccacheDir, restoreKey)
-    )
-  } else {
+  if (restoreKey === state.restoreKey) {
     core.info(`Stored cache matches with the current cache. Skip saving cache.`)
+    return
   }
+
+  if (state.ghToken !== '' && state.restoreKey !== '' && !isPullRequest) {
+    try {
+      await core.group('Delete old cache', async () => {
+        await deleteCache(state.ghToken, state.restoreKey)
+        core.info(`Deleted cache with key: ${state.restoreKey}`)
+      })
+    } catch (error) {
+      core.warning((error as Error)?.message ?? error)
+    }
+  }
+
+  await core.group('Saving cache', () =>
+    saveCache(state.ccacheDir, state.ccacheKeyPrefix)
+  )
 }
 
 async function downloadTool(

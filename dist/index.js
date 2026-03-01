@@ -52691,35 +52691,12 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.restoreBinaryCache = restoreBinaryCache;
-exports.saveBinaryCache = saveBinaryCache;
 exports.restoreCache = restoreCache;
 exports.saveCache = saveCache;
 exports.deleteCache = deleteCache;
 const path = __importStar(__nccwpck_require__(16928));
-const os = __importStar(__nccwpck_require__(70857));
 const cache = __importStar(__nccwpck_require__(5116));
 const github = __importStar(__nccwpck_require__(93228));
-async function restoreBinaryCache(installPath, restoreKeyPrefix, version) {
-    try {
-        if (!cache.isFeatureAvailable())
-            return undefined;
-        return await cache.restoreCache([`${installPath}${path.sep}**`], `${restoreKeyPrefix}_${os.platform()}_${os.arch()}_${version}`);
-    }
-    catch {
-        return undefined;
-    }
-}
-async function saveBinaryCache(installPath, restoreKeyPrefix, version) {
-    try {
-        if (!cache.isFeatureAvailable())
-            return undefined;
-        return await cache.saveCache([`${installPath}${path.sep}**`], `${restoreKeyPrefix}_${os.platform()}_${os.arch()}_${version}`);
-    }
-    catch {
-        return undefined;
-    }
-}
 async function restoreCache(ccachePath, restoreKeyPrefix) {
     try {
         if (!cache.isFeatureAvailable())
@@ -53251,7 +53228,6 @@ async function run() {
         await postAction({
             ccacheKeyPrefix: core.getState('ccacheKeyPrefix'),
             ccacheDir: core.getState('ccacheDir'),
-            saveCacheOncePerKey: core.getState('saveCacheOncePerKey') === 'true',
             restoreKey: core.getState('restoreKey'),
             ghToken: core.getState('ghToken')
         });
@@ -53276,7 +53252,6 @@ async function run() {
     core.saveState('isPost', 'true');
     core.saveState('ccacheKeyPrefix', input.ccacheKeyPrefix);
     core.saveState('ccacheDir', input.ccacheDir);
-    core.saveState('saveCacheOncePerKey', input.saveCacheOncePerKey);
     core.saveState('restoreKey', restoreKey ?? '');
     core.saveState('ghToken', input.ghToken);
 }
@@ -53292,44 +53267,28 @@ async function preInstall(input) {
         return version;
     });
     const installPath = path.join(input.path, 'install', 'bin');
-    const cacheHit = await core.group('Restore Binary Cache', async () => {
-        const restoreKey = await (0, cache_helper_1.restoreBinaryCache)(installPath, input.ccacheBinaryKeyPrefix, ccacheVersion.version.version);
-        if (restoreKey !== undefined) {
-            core.info(`Restored binary cache with key: ${restoreKey}`);
-        }
-        else {
-            core.info('Binary cache not found.');
-        }
-        return restoreKey;
-    });
-    if (cacheHit) {
-        if (await postInstall(input, ccacheVersion, installPath))
-            return;
-    }
     await install(input, ccacheVersion, installPath);
 }
 async function install(input, ccacheVersion, installPath) {
-    if (input.installType === 'binary') {
-        const downloadHit = await core.group('Download Binary', async () => {
-            const matrix = constants_1.CCACHE_BINARY_SUPPORTED_URL[os.platform()];
-            if (matrix) {
-                let targetBinary;
-                for (const v of Object.entries(matrix)) {
-                    if (semver.satisfies(ccacheVersion.version, v[0])) {
-                        targetBinary = v[1];
-                        break;
-                    }
-                }
-                if (targetBinary) {
-                    return await downloadTool(targetBinary, ccacheVersion.version.version, input.path, installPath);
+    const downloadHit = await core.group('Download Binary', async () => {
+        const matrix = constants_1.CCACHE_BINARY_SUPPORTED_URL[os.platform()];
+        if (matrix) {
+            let targetBinary;
+            for (const v of Object.entries(matrix)) {
+                if (semver.satisfies(ccacheVersion.version, v[0])) {
+                    targetBinary = v[1];
+                    break;
                 }
             }
-            return false;
-        });
-        if (downloadHit) {
-            if (await postInstall(input, ccacheVersion, installPath, true))
-                return;
+            if (targetBinary) {
+                return await downloadTool(targetBinary, ccacheVersion.version.version, input.path, installPath);
+            }
         }
+        return false;
+    });
+    if (downloadHit) {
+        if (await postInstall(input, ccacheVersion, installPath))
+            return;
     }
     // Fail to restore or download, fall back to compile from source.
     await core.group('Checkout Binary', () => git.checkout(input.path, ccacheVersion.tag));
@@ -53341,11 +53300,11 @@ async function install(input, ccacheVersion, installPath) {
     await core.group('Install Ccache', async () => {
         await cmakeHelper.install(path.join(input.path, 'install'));
     });
-    if (!(await postInstall(input, ccacheVersion, installPath, true))) {
+    if (!(await postInstall(input, ccacheVersion, installPath))) {
         throw new Error('ccache is not working after compilation. Try downgrading if problem persist.');
     }
 }
-async function postInstall(input, ccacheVersion, installPath, saveCache) {
+async function postInstall(input, ccacheVersion, installPath) {
     const working = await core.group('Test Ccache', () => (0, ccache_helper_1.showVersion)(installPath));
     if (working) {
         core.addPath(installPath);
@@ -53354,9 +53313,6 @@ async function postInstall(input, ccacheVersion, installPath, saveCache) {
         }
         else {
             core.setOutput('ccache-binary-path', path.join(installPath, 'ccache'));
-        }
-        if (saveCache) {
-            await core.group('Save Binary Cache', () => (0, cache_helper_1.saveBinaryCache)(installPath, input.ccacheBinaryKeyPrefix, ccacheVersion.version.version));
         }
         return true;
     }
@@ -53392,27 +53348,22 @@ async function postAction(state) {
     }
     const restoreKey = `${state.ccacheKeyPrefix}_${outputHash}`;
     const isPullRequest = github.context.ref.startsWith('refs/pull/');
-    if (restoreKey !== state.restoreKey) {
-        if (state.saveCacheOncePerKey && state.restoreKey !== '') {
-            core.info(`Stored cache already exist. Skip saving cache.`);
-            return;
-        }
-        if (state.ghToken !== '' && state.restoreKey !== '' && !isPullRequest) {
-            try {
-                await core.group('Delete old cache', async () => {
-                    await (0, cache_helper_1.deleteCache)(state.ghToken, state.restoreKey);
-                    core.info(`Deleted cache with key: ${state.restoreKey}`);
-                });
-            }
-            catch (error) {
-                core.warning(error?.message ?? error);
-            }
-        }
-        await core.group('Saving cache', () => (0, cache_helper_1.saveCache)(state.ccacheDir, restoreKey));
-    }
-    else {
+    if (restoreKey === state.restoreKey) {
         core.info(`Stored cache matches with the current cache. Skip saving cache.`);
+        return;
     }
+    if (state.ghToken !== '' && state.restoreKey !== '' && !isPullRequest) {
+        try {
+            await core.group('Delete old cache', async () => {
+                await (0, cache_helper_1.deleteCache)(state.ghToken, state.restoreKey);
+                core.info(`Deleted cache with key: ${state.restoreKey}`);
+            });
+        }
+        catch (error) {
+            core.warning(error?.message ?? error);
+        }
+    }
+    await core.group('Saving cache', () => (0, cache_helper_1.saveCache)(state.ccacheDir, state.ccacheKeyPrefix));
 }
 async function downloadTool(binary, version, downloadPath, installPath) {
     try {
@@ -53503,10 +53454,6 @@ async function getInputs() {
     if (version === null) {
         throw new Error(`Version '${core.getInput('version')}' is not valid range`);
     }
-    const installType = core.getInput('install-type').toLowerCase() || 'binary';
-    if (installType !== 'binary' && installType !== 'source') {
-        throw new Error(`Install Type must be either binary or source.`);
-    }
     let ccacheDir = core.getInput('cache-dir') || '.ccache';
     ccacheDir = path.resolve(githubWorkspacePath, ccacheDir);
     if (!(ccacheDir + path.sep).startsWith(githubWorkspacePath + path.sep)) {
@@ -53527,10 +53474,7 @@ async function getInputs() {
         path: repositoryPath,
         version: version,
         install: core.getBooleanInput('install') || true,
-        installType: installType,
-        ccacheBinaryKeyPrefix: core.getInput('ccache-binary-key-prefix') || 'ccache_binary',
         ccacheKeyPrefix: core.getInput('ccache-key-prefix') || 'ccache_cache',
-        saveCacheOncePerKey: core.getBooleanInput('save-cache-once-per-key') || false,
         ghToken: core.getInput('gh-token') || '',
         ccacheDir: ccacheDir,
         compilerCheck: compilerCheck,

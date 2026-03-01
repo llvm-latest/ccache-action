@@ -1,42 +1,7 @@
 import * as path from 'path'
-import * as os from 'os'
 
 import * as cache from '@actions/cache'
 import * as github from '@actions/github'
-
-export async function restoreBinaryCache(
-  installPath: string,
-  restoreKeyPrefix: string,
-  version: string
-): Promise<string | undefined> {
-  try {
-    if (!cache.isFeatureAvailable()) return undefined
-
-    return await cache.restoreCache(
-      [`${installPath}${path.sep}**`],
-      `${restoreKeyPrefix}_${os.platform()}_${os.arch()}_${version}`
-    )
-  } catch {
-    return undefined
-  }
-}
-
-export async function saveBinaryCache(
-  installPath: string,
-  restoreKeyPrefix: string,
-  version: string
-): Promise<number | undefined> {
-  try {
-    if (!cache.isFeatureAvailable()) return undefined
-
-    return await cache.saveCache(
-      [`${installPath}${path.sep}**`],
-      `${restoreKeyPrefix}_${os.platform()}_${os.arch()}_${version}`
-    )
-  } catch {
-    return undefined
-  }
-}
 
 export async function restoreCache(
   ccachePath: string,

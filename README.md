@@ -1,8 +1,15 @@
+# This Fork
+
+- Not caching `ccache` binary files and remove unnecessary options
+- Ensure only a single, up-to-date incremental cache is retained without hashing
+
+---
+
 # Ccache for GH Actions
 
-![CI](https://github.com/jianmingyong/ccache-action/actions/workflows/ci.yml/badge.svg)
-[![Check dist/](https://github.com/jianmingyong/ccache-action/actions/workflows/check-dist.yml/badge.svg)](https://github.com/jianmingyong/ccache-action/actions/workflows/check-dist.yml)
-[![CodeQL](https://github.com/jianmingyong/ccache-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/actions/typescript-action/actions/workflows/codeql-analysis.yml)
+![CI](https://github.com/llvm-latest/ccache-action/actions/workflows/ci.yml/badge.svg)
+[![Check dist/](https://github.com/llvm-latest/ccache-action/actions/workflows/check-dist.yml/badge.svg)](https://github.com/llvm-latest/ccache-action/actions/workflows/check-dist.yml)
+[![CodeQL](https://github.com/llvm-latest/ccache-action/actions/workflows/codeql-analysis.yml/badge.svg)](https://github.com/actions/typescript-action/actions/workflows/codeql-analysis.yml)
 [![Coverage](./badges/coverage.svg)](./badges/coverage.svg)
 
 A GitHub action to speed up building using [Ccache](https://ccache.dev/) for
@@ -36,7 +43,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ['windows-latest', 'ubuntu-latest', 'macos-13']
+        os: ['windows-latest', 'ubuntu-latest', 'macos-latest']
 
     # Ensure to set up concurrency per ref per matrix to avoid using the same
     # cache in parallel when pushing multiple commits.
@@ -58,7 +65,7 @@ jobs:
       # You are required to set the ccache-key-prefix to be unique per matrix.
       # If you are not building for multiple platform, that will not be required.
       - name: Setup Ccache
-        uses: jianmingyong/ccache-action@v1
+        uses: llvm-latest/ccache-action@main
         with:
           ccache-key-prefix: ccache_cache_${{ matrix.os }}
           max-size: 150M
@@ -101,7 +108,7 @@ Windows.
 ## Action inputs
 
 You can visit
-[action.yml](https://github.com/jianmingyong/ccache-action/blob/main/action.yml)
+[action.yml](https://github.com/llvm-latest/ccache-action/blob/main/action.yml)
 for all possible inputs.
 
 ## Why use this action?
@@ -113,14 +120,12 @@ However this does not support `Sccache` or any other caching tools.
 The difference in this action is the ability to support incremental cache and
 only store **one** copy of the cache per ref per matrix.
 
-Each incremental cache is hashed to check for updates and will delete the old
+Each incremental cache is no hash to check for updates and will delete the old
 cache before uploading the new one resulting in only a single copy of cache.
 
 Incremental cache only works for commits coming from your own Repository. Pull
 requests are not supported and will result in creating multiple copies which
-will flood your cache. (Update: You can now use save-cache-once-per-key argument
-to prevent flooding. This is still pretty much experimental and better solution
-may be offered once it is implemented)
+will flood your cache.
 
 ## Telling CMake how to use Ccache
 

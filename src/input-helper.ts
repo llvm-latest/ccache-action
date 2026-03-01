@@ -10,10 +10,7 @@ export interface GHAInputs {
   path: string
   version: string
   install: boolean
-  installType: 'binary' | 'source'
-  ccacheBinaryKeyPrefix: string
   ccacheKeyPrefix: string
-  saveCacheOncePerKey: boolean
   ghToken: string
 
   ccacheDir: string
@@ -56,12 +53,6 @@ export async function getInputs(): Promise<GHAInputs> {
     throw new Error(`Version '${core.getInput('version')}' is not valid range`)
   }
 
-  const installType = core.getInput('install-type').toLowerCase() || 'binary'
-
-  if (installType !== 'binary' && installType !== 'source') {
-    throw new Error(`Install Type must be either binary or source.`)
-  }
-
   let ccacheDir = core.getInput('cache-dir') || '.ccache'
   ccacheDir = path.resolve(githubWorkspacePath, ccacheDir)
 
@@ -94,12 +85,7 @@ export async function getInputs(): Promise<GHAInputs> {
     path: repositoryPath,
     version: version,
     install: core.getBooleanInput('install') || true,
-    installType: installType,
-    ccacheBinaryKeyPrefix:
-      core.getInput('ccache-binary-key-prefix') || 'ccache_binary',
     ccacheKeyPrefix: core.getInput('ccache-key-prefix') || 'ccache_cache',
-    saveCacheOncePerKey:
-      core.getBooleanInput('save-cache-once-per-key') || false,
     ghToken: core.getInput('gh-token') || '',
 
     ccacheDir: ccacheDir,
