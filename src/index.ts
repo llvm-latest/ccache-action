@@ -226,8 +226,8 @@ async function postAction(state: GHAStates) {
   }
 
   await core.group('Saving cache', async () => {
-    await saveCache(state.ccacheDir, restoreKey)
-    core.info(`Saved cache with key: ${restoreKey}`)
+    await saveCache(state.ccacheDir, state.ccacheKeyPrefix)
+    core.info(`Saved cache with key: ${state.ccacheKeyPrefix}`)
   })
 }
 

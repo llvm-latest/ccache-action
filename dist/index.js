@@ -53364,8 +53364,8 @@ async function postAction(state) {
         }
     }
     await core.group('Saving cache', async () => {
-        await (0, cache_helper_1.saveCache)(state.ccacheDir, restoreKey);
-        core.info(`Saved cache with key: ${restoreKey}`);
+        await (0, cache_helper_1.saveCache)(state.ccacheDir, state.ccacheKeyPrefix);
+        core.info(`Saved cache with key: ${state.ccacheKeyPrefix}`);
     });
 }
 async function downloadTool(binary, version, downloadPath, installPath) {
