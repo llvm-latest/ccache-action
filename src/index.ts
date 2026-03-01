@@ -176,7 +176,7 @@ async function configure(input: GHAInputs) {
       core.exportVariable('CCACHE_DIR', input.ccacheDir)
       core.exportVariable('CCACHE_COMPILERCHECK', input.compilerCheck)
       // prettier-ignore
-      core.exportVariable( input.compression ? 'CCACHE_COMPRESS' : 'CCACHE_NOCOMPRESS', 'true')
+      core.exportVariable(input.compression ? 'CCACHE_COMPRESS' : 'CCACHE_NOCOMPRESS', 'true')
       // prettier-ignore
       core.exportVariable('CCACHE_COMPRESSLEVEL', input.compressionLevel.toString())
       core.exportVariable('CCACHE_MAXFILES', input.maxFiles.toString())
@@ -225,9 +225,10 @@ async function postAction(state: GHAStates) {
     }
   }
 
-  await core.group('Saving cache', () =>
-    saveCache(state.ccacheDir, state.ccacheKeyPrefix)
-  )
+  await core.group('Saving cache', async () => {
+    await saveCache(state.ccacheDir, restoreKey)
+    core.info(`Saved cache with key: ${restoreKey}`)
+  })
 }
 
 async function downloadTool(
