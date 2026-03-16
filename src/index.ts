@@ -26,7 +26,6 @@ import { findVersion, type CCacheVersion } from './utils'
 interface GHAStates {
   ccacheKeyPrefix: string
   ccacheDir: string
-  restoreKey: string
   ghToken: string
 }
 
@@ -35,7 +34,6 @@ async function run(): Promise<void> {
     await postAction({
       ccacheKeyPrefix: core.getState('ccacheKeyPrefix'),
       ccacheDir: core.getState('ccacheDir'),
-      restoreKey: core.getState('restoreKey'),
       ghToken: core.getState('ghToken')
     })
     return
@@ -47,10 +45,15 @@ async function run(): Promise<void> {
     await preInstall(input)
   }
 
-  const restoreKey = await core.group('Restore cache', async () => {
+  await core.group('Restore cache', async () => {
     const key = await restoreCache(input.ccacheDir, input.ccacheKeyPrefix)
 
     if (key !== undefined) {
+      if (key !== input.ccacheKeyPrefix) {
+        core.error(`Restored cache with key '${key}' not mathced with '${input.ccacheKeyPrefix}'`)
+        return undefined
+      }
+
       core.info(`Restored cache with key: ${key}`)
     } else {
       core.info(`Cache not found.`)
@@ -65,7 +68,6 @@ async function run(): Promise<void> {
   core.saveState('isPost', 'true')
   core.saveState('ccacheKeyPrefix', input.ccacheKeyPrefix)
   core.saveState('ccacheDir', input.ccacheDir)
-  core.saveState('restoreKey', restoreKey ?? '')
   core.saveState('ghToken', input.ghToken)
 }
 
@@ -176,7 +178,7 @@ async function configure(input: GHAInputs) {
       core.exportVariable('CCACHE_DIR', input.ccacheDir)
       core.exportVariable('CCACHE_COMPILERCHECK', input.compilerCheck)
       // prettier-ignore
-      core.exportVariable( input.compression ? 'CCACHE_COMPRESS' : 'CCACHE_NOCOMPRESS', 'true')
+      core.exportVariable(input.compression ? 'CCACHE_COMPRESS' : 'CCACHE_NOCOMPRESS', 'true')
       // prettier-ignore
       core.exportVariable('CCACHE_COMPRESSLEVEL', input.compressionLevel.toString())
       core.exportVariable('CCACHE_MAXFILES', input.maxFiles.toString())
@@ -206,28 +208,24 @@ async function postAction(state: GHAStates) {
     return
   }
 
-  const restoreKey = `${state.ccacheKeyPrefix}_${outputHash}`
   const isPullRequest = github.context.ref.startsWith('refs/pull/')
 
-  if (restoreKey === state.restoreKey) {
-    core.info(`Stored cache matches with the current cache. Skip saving cache.`)
-    return
-  }
-
-  if (state.ghToken !== '' && state.restoreKey !== '' && !isPullRequest) {
+  // Always delete old cache before save new cache.
+  if (state.ghToken !== '' && !isPullRequest) {
     try {
       await core.group('Delete old cache', async () => {
-        await deleteCache(state.ghToken, state.restoreKey)
-        core.info(`Deleted cache with key: ${state.restoreKey}`)
+        await deleteCache(state.ghToken, state.ccacheKeyPrefix)
+        core.info(`Deleted cache with key: ${state.ccacheKeyPrefix}`)
       })
     } catch (error) {
       core.warning((error as Error)?.message ?? error)
     }
   }
 
-  await core.group('Saving cache', () =>
-    saveCache(state.ccacheDir, state.ccacheKeyPrefix)
-  )
+  await core.group('Saving cache', async () => {
+    await saveCache(state.ccacheDir, state.ccacheKeyPrefix)
+    core.info(`Saved cache with key: ${state.ccacheKeyPrefix}`)
+  })
 }
 
 async function downloadTool(

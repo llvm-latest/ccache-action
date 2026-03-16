@@ -53346,12 +53346,7 @@ async function postAction(state) {
         core.info('No cache found. Skip saving cache.');
         return;
     }
-    const restoreKey = `${state.ccacheKeyPrefix}_${outputHash}`;
     const isPullRequest = github.context.ref.startsWith('refs/pull/');
-    if (restoreKey === state.restoreKey) {
-        core.info(`Stored cache matches with the current cache. Skip saving cache.`);
-        return;
-    }
     if (state.ghToken !== '' && state.restoreKey !== '' && !isPullRequest) {
         try {
             await core.group('Delete old cache', async () => {
@@ -53363,7 +53358,10 @@ async function postAction(state) {
             core.warning(error?.message ?? error);
         }
     }
-    await core.group('Saving cache', () => (0, cache_helper_1.saveCache)(state.ccacheDir, state.ccacheKeyPrefix));
+    await core.group('Saving cache', async () => {
+        await (0, cache_helper_1.saveCache)(state.ccacheDir, state.ccacheKeyPrefix);
+        core.info(`Saved cache with key: ${state.ccacheKeyPrefix}`);
+    });
 }
 async function downloadTool(binary, version, downloadPath, installPath) {
     try {
