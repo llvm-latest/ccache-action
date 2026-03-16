@@ -11,17 +11,17 @@ import {
   restoreCache,
   saveCache,
   deleteCache
-} from './cache-helper'
-import { showVersion, showStats } from './ccache-helper'
-import { CMakeHelper } from './cmake-helper'
+} from './cache-helper.js'
+import { showVersion, showStats } from './ccache-helper.js'
+import { CMakeHelper } from './cmake-helper.js'
 import {
   type CCacheBinaryMetadata,
   CCACHE_BINARY_SUPPORTED_URL
-} from './constants'
-import * as git from './git-helper'
-import { hashFiles } from './hash-helper'
-import { getInputs, type GHAInputs } from './input-helper'
-import { findVersion, type CCacheVersion } from './utils'
+} from './constants.js'
+import * as git from './git-helper.js'
+import { hashFiles } from './hash-helper.js'
+import { getInputs, type GHAInputs } from './input-helper.js'
+import { findVersion, type CCacheVersion } from './utils.js'
 
 interface GHAStates {
   ccacheKeyPrefix: string
@@ -101,22 +101,22 @@ async function install(
     if (matrix) {
       let targetBinary: CCacheBinaryMetadata | undefined
 
-      for (const v of Object.entries(matrix)) {
-        if (semver.satisfies(ccacheVersion.version, v[0])) {
-          targetBinary = v[1]
-          break
+        for (const v of Object.entries(matrix)) {
+          if (semver.satisfies(ccacheVersion.version, v[0])) {
+            targetBinary = v[1]
+            break
+          }
+        }
+
+        if (targetBinary) {
+          return await downloadTool(
+            targetBinary,
+            ccacheVersion.version,
+            input.path,
+            installPath
+          )
         }
       }
-
-      if (targetBinary) {
-        return await downloadTool(
-          targetBinary,
-          ccacheVersion.version.version,
-          input.path,
-          installPath
-        )
-      }
-    }
 
     return false
   })
@@ -125,7 +125,7 @@ async function install(
     if (await postInstall(input, ccacheVersion, installPath)) return
   }
 
-  // Fail to restore or download, fall back to compile from source.
+  // Fail to download, fall back to compile from source.
   await core.group('Checkout Binary', () =>
     git.checkout(input.path, ccacheVersion.tag)
   )
@@ -230,7 +230,7 @@ async function postAction(state: GHAStates) {
 
 async function downloadTool(
   binary: CCacheBinaryMetadata,
-  version: string,
+  version: semver.SemVer,
   downloadPath: string,
   installPath: string
 ): Promise<boolean> {
